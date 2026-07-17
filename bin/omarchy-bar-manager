@@ -1,0 +1,331 @@
+#!/bin/bash
+# obm - Omarchy Bar Manager
+
+BARS_DIR="$HOME/.local/share/bars"
+ACTIVE_DIR="$HOME/.config/omarchy/active-bar"
+STATE_FILE="$HOME/.cache/obm-state"
+
+mkdir -p "$BARS_DIR" "$ACTIVE_DIR"
+
+BOLD="\033[1m"
+DIM="\033[2m"
+RESET="\033[0m"
+CYAN="\033[36m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+RED="\033[31m"
+MAGENTA="\033[35m"
+
+discover_bars() {
+  echo "omarchy"
+  [[ -d "$HOME/.config/quickshell/bar" ]] && echo "qs"
+  [[ -d "$BARS_DIR" ]] && for dir in "$BARS_DIR"/*/; do
+    [[ -d "$dir" ]] && basename "$dir"
+  done | sort
+}
+
+get_bar_desc() {
+  local name="$1"
+  [[ "$name" == "omarchy" ]] && echo "Omarchy default" && return
+  [[ "$name" == "qs" ]] && echo "QS-Shell" && return
+  local meta="$BARS_DIR/$name/.bar-meta"
+  [[ -f "$meta" ]] && head -1 "$meta" && return
+  echo "Custom bar"
+}
+
+get_bar_dir() {
+  local name="$1"
+  case "$name" in
+    omarchy) echo "/usr/share/omarchy/shell" ;;
+    qs) echo "$HOME/.config/quickshell/bar" ;;
+    *) echo "$BARS_DIR/$name" ;;
+  esac
+}
+
+find_preview_image() {
+  local dir="$1"
+  for img in preview.png screenshot.png theme.png preview.jpg screenshot.jpg; do
+    [[ -f "$dir/$img" ]] && echo "$dir/$img" && return
+  done
+  [[ -d "$dir/assets" ]] && for img in preview.png screenshot.png; do
+    [[ -f "$dir/assets/$img" ]] && echo "$dir/assets/$img" && return
+  done
+  return 1
+}
+
+link_bar() {
+  local name="$1"
+  local src=$(get_bar_dir "$name")
+  rm -rf "$ACTIVE_DIR"/* "$ACTIVE_DIR"/.* 2>/dev/null
+  for item in "$src"/* "$src"/.*; do
+    [[ -e "$item" ]] || continue
+    local base=$(basename "$item")
+    [[ "$base" == "." || "$base" == ".." ]] && continue
+    ln -sf "$item" "$ACTIVE_DIR/$base"
+  done
+  echo "$name" > "$STATE_FILE"
+}
+
+add_bar() {
+  local url="$1"
+  local name="${2:-}"
+  url=$(echo "$url" | sed 's|/tree/[^/]*$||')
+  [[ -z "$name" ]] && name=$(basename "$url" .git)
+  local dest="$BARS_DIR/$name"
+  [[ -d "$dest" ]] && echo -e "${RED}Bar '$name' already exists${RESET}" && exit 1
+  echo -e "${CYAN}Cloning $url...${RESET}"
+  git clone --depth 1 "$url" "$dest" 2>&1 || { echo -e "${RED}Failed to clone${RESET}"; exit 1; }
+  if [[ ! -f "$dest/shell.qml" ]]; then
+    local v1="$dest/versions/V1"
+    if [[ -f "$v1/shell.qml" ]]; then
+      mv "$v1"/* "$dest/" 2>/dev/null; mv "$v1"/.* "$dest/" 2>/dev/null
+      rmdir "$v1" 2>/dev/null; rmdir "$dest/versions" 2>/dev/null
+    fi
+  fi
+  local desc="Custom bar"
+  [[ -f "$dest/shell.qml" || -f "$dest/bar.qml" ]] && desc="Quickshell bar"
+  [[ -f "$dest/package.json" ]] && desc="Node bar"
+  echo "$desc" > "$dest/.bar-meta"
+  echo -e "${GREEN}Added '$name' ($desc)${RESET}"
+}
+
+remove_bar() {
+  local name="$1"
+  local dest="$BARS_DIR/$name"
+  [[ "$name" == "omarchy" ]] && echo -e "${RED}Cannot remove built-in Omarchy bar${RESET}" && exit 1
+  if [[ "$name" == "qs" ]]; then
+    dest="$HOME/.config/quickshell"
+    [[ ! -d "$dest" ]] && echo -e "${RED}QS-Shell not installed${RESET}" && exit 1
+  fi
+  [[ ! -d "$dest" ]] && echo -e "${RED}Bar '$name' not found${RESET}" && exit 1
+  [[ "$(cat "$STATE_FILE" 2>/dev/null)" == "$name" ]] && echo -e "${RED}Cannot remove active bar${RESET}" && exit 1
+  rm -rf "$dest"
+  echo -e "${GREEN}Removed '$name'${RESET}"
+}
+
+switch_bar() {
+  local target="$1"
+  local current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
+  case "$target" in
+    omarchy|qs) ;;
+    *) [[ ! -d "$BARS_DIR/$target" ]] && echo -e "${RED}Unknown bar: $target${RESET}" && exit 1 ;;
+  esac
+  [[ "$target" == "$current" ]] && echo -e "${YELLOW}Already using $target${RESET}" && exit 0
+  pkill -9 quickshell 2>/dev/null; pkill -9 qs 2>/dev/null; sleep 0.5
+  link_bar "$target"
+  case "$target" in
+    omarchy)
+      mv "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" \
+         "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise.disabled" 2>/dev/null
+      omarchy restart shell ;;
+    qs)
+      mv "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise.disabled" \
+         "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" 2>/dev/null
+      export OMARCHY_PATH=/usr/share/omarchy
+      setsid qs -n -d -c bar >/dev/null 2>&1 & ;;
+    *)
+      setsid quickshell -n -p "$ACTIVE_DIR" >/dev/null 2>&1 & ;;
+  esac
+  echo -e "${GREEN}Switched to $(get_bar_desc "$target")${RESET}"
+}
+
+refresh_bar() {
+  local current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
+  pkill -9 quickshell 2>/dev/null; pkill -9 qs 2>/dev/null; sleep 0.5
+  case "$current" in
+    omarchy) omarchy restart shell ;;
+    qs) export OMARCHY_PATH=/usr/share/omarchy; setsid qs -n -d -c bar >/dev/null 2>&1 & ;;
+    *) setsid quickshell -n -p "$ACTIVE_DIR" >/dev/null 2>&1 & ;;
+  esac
+  echo -e "${GREEN}Refreshed $current${RESET}"
+}
+
+update_self() {
+  local repo="${OBM_REPO_DIR:-/local/repos/omarchy-bar-manager}"
+  if [[ ! -d "$repo/.git" ]]; then
+    echo -e "${RED}Repository not found at $repo${RESET}"
+    exit 1
+  fi
+  echo -e "${CYAN}Updating obm from $repo...${RESET}"
+  (cd "$repo" && git pull --rebase) || { echo -e "${RED}Failed to pull updates${RESET}"; exit 1; }
+  if [[ -f "$repo/install.sh" ]]; then
+    echo -e "${CYAN}Running installer...${RESET}"
+    bash "$repo/install.sh"
+  fi
+  echo -e "${GREEN}Update complete${RESET}"
+}
+
+print_header() {
+  local tab="$1"
+  clear
+  echo -e "${BOLD}${CYAN}  ╔══════════════════════════════════════════════════╗${RESET}"
+  echo -e "${BOLD}${CYAN}  ║          Omarchy Bar Manager                     ║${RESET}"
+  echo -e "${BOLD}${CYAN}  ╚══════════════════════════════════════════════════╝${RESET}"
+  echo ""
+  echo -e "  ${DIM}┌───────────┬───────────┐${RESET}"
+  if [[ "$tab" == "bars" ]]; then
+    echo -e "  ${DIM}│${RESET}${BOLD}${CYAN}▸ Bars${RESET}     ${DIM}│${RESET}${DIM} Review${RESET}    ${DIM}│${RESET}"
+  else
+    echo -e "  ${DIM}│${RESET}${DIM} Bars${RESET}     ${DIM}│${RESET}${BOLD}${CYAN}▸ Review${RESET}  ${DIM}│${RESET}"
+  fi
+  echo -e "  ${DIM}└───────────┴───────────┘${RESET}"
+  echo ""
+}
+
+print_footer() {
+  echo ""
+  echo -e "  ${DIM}───────────────────────────────────────────────────${RESET}"
+  echo -e "  ${CYAN}[Tab]${RESET} Switch tab  ${CYAN}[Enter]${RESET} Select  ${CYAN}[r]${RESET} Refresh  ${CYAN}[q]${RESET} Quit"
+}
+
+run_tui() {
+  local TAB="bars"
+  local SELECTED=""
+  local current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
+
+  while true; do
+    print_header "$TAB"
+    echo -e "  ${DIM}Active:${RESET} ${BOLD}${GREEN}$current${RESET}"
+    echo ""
+
+    if [[ "$TAB" == "bars" ]]; then
+      echo -e "  ${BOLD}Select a bar:${RESET}"
+      echo ""
+
+      bar_list=""
+      while IFS= read -r name; do
+        desc=$(get_bar_desc "$name")
+        [[ "$name" == "$current" ]] && bar_list+="● ${name} — ${desc}"$'\n' || bar_list+="  ${name} — ${desc}"$'\n'
+      done < <(discover_bars)
+
+      selected=$(echo "$bar_list" | fzf \
+        --prompt="  ▸ " \
+        --height=50% \
+        --reverse \
+        --border=rounded \
+        --preview="echo {1} {2} | sed 's/^[● ]*//' | awk -F' — ' '{print \$1}' | xargs obm-preview" \
+        --preview-window=right:50%:wrap \
+        --no-info)
+
+      if [[ -n "$selected" ]]; then
+        SELECTED=$(echo "$selected" | sed 's/^[● ]*//' | awk -F' — ' '{print $1}')
+        TAB="review"
+      else
+        break
+      fi
+
+    elif [[ "$TAB" == "review" ]]; then
+      local sel_desc=$(get_bar_desc "$SELECTED")
+      local sel_dir=$(get_bar_dir "$SELECTED")
+
+      echo -e "  ${BOLD}Review:${RESET}"
+      echo ""
+      echo -e "  ${CYAN}Bar:${RESET}        ${BOLD}$SELECTED${RESET}"
+      echo -e "  ${CYAN}Description:${RESET} $sel_desc"
+      echo -e "  ${CYAN}Location:${RESET}   $sel_dir"
+      echo -e "  ${CYAN}Current:${RESET}    $current"
+      echo ""
+
+      local img=$(find_preview_image "$sel_dir" 2>/dev/null)
+      if [[ -n "$img" ]] && command -v kitten &>/dev/null; then
+        kitten icat --clear --transfer-mode=stream --unicode-placeholder "$img" 2>/dev/null
+      elif [[ -n "$img" ]] && command -v chafa &>/dev/null; then
+        chafa --size=60x15 "$img" 2>/dev/null
+      else
+        echo -e "  ${DIM}(No preview available)${RESET}"
+      fi
+
+      echo ""
+      echo -e "  ${DIM}Switch from ${BOLD}$current${RESET}${DIM} to ${BOLD}$SELECTED${RESET}${DIM}?${RESET}"
+      echo ""
+      echo -e "  ${GREEN}[y]${RESET} Confirm  ${RED}[n]${RESET} Cancel  ${CYAN}[Tab]${RESET} Back"
+
+      read -rsn1 key
+      case "$key" in
+        y|Y)
+          switch_bar "$SELECTED"
+          current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
+          TAB="bars"
+          SELECTED=""
+          sleep 1
+          ;;
+        n|N|q)
+          TAB="bars"
+          SELECTED=""
+          ;;
+        $'\t')
+          TAB="bars"
+          SELECTED=""
+          ;;
+      esac
+    fi
+
+    print_footer
+  done
+}
+
+# Main
+case "${1:-}" in
+  help|-h|--help)
+    echo -e "\n${BOLD}obm${RESET} — Omarchy Bar Manager\n"
+    echo -e "${BOLD}Usage:${RESET}"
+    echo "  obm              Launch TUI"
+    echo "  obm <bar>        Switch to bar"
+    echo "  obm list         List available bars"
+    echo "  obm status       Show current bar"
+    echo "  obm add <url>    Add bar from git"
+    echo "  obm remove <n>   Remove a bar"
+    echo "  obm toggle       Switch to next bar"
+    echo "  obm refresh      Restart current bar"
+    echo "  obm update       Update obm from repo"
+    echo "  obm help         Show this help"
+    echo ""
+    echo -e "${BOLD}TUI Keys:${RESET}"
+    echo "  Tab    Switch between Bars/Review tabs"
+    echo "  Enter  Select bar / Confirm"
+    echo "  y      Confirm switch"
+    echo "  n      Cancel"
+    echo "  r      Refresh current bar"
+    echo "  q      Quit"
+    echo ""
+    ;;
+  list|ls)
+    echo -e "\n${BOLD}Available bars:${RESET}\n"
+    current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
+    while IFS= read -r name; do
+      desc=$(get_bar_desc "$name")
+      [[ "$name" == "$current" ]] && echo -e "  ${GREEN}●${RESET} ${BOLD}$name${RESET} — $desc" || echo -e "    $name — $desc"
+    done < <(discover_bars)
+    echo ""
+    ;;
+  status)
+    current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
+    echo -e "$current — $(get_bar_desc "$current")"
+    ;;
+  add)
+    shift
+    add_bar "$@"
+    ;;
+  remove|rm)
+    shift
+    remove_bar "$@"
+    ;;
+  toggle)
+    current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
+    while IFS= read -r name; do
+      [[ "$name" != "$current" ]] && switch_bar "$name" && break
+    done < <(discover_bars)
+    ;;
+  refresh)
+    refresh_bar
+    ;;
+  update|upgrade)
+    update_self
+    ;;
+  tui|"")
+    run_tui
+    ;;
+  *)
+    switch_bar "$1"
+    ;;
+esac

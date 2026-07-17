@@ -1,0 +1,59 @@
+#!/bin/bash
+# Preview helper for obm
+
+BARS_DIR="$HOME/.local/share/bars"
+
+get_bar_dir() {
+  local name="$1"
+  case "$name" in
+    omarchy) echo "/usr/share/omarchy/shell" ;;
+    qs) echo "$HOME/.config/quickshell/bar" ;;
+    *) echo "$BARS_DIR/$name" ;;
+  esac
+}
+
+get_bar_desc() {
+  local name="$1"
+  [[ "$name" == "omarchy" ]] && echo "Omarchy default" && return
+  [[ "$name" == "qs" ]] && echo "QS-Shell" && return
+  local meta="$BARS_DIR/$name/.bar-meta"
+  [[ -f "$meta" ]] && head -1 "$meta" && return
+  echo "Custom bar"
+}
+
+find_preview_image() {
+  local dir="$1"
+  for img in preview.png screenshot.png preview.jpg screenshot.jpg preview.webp screenshot.webp preview.gif screenshot.gif; do
+    if [[ -f "$dir/$img" ]]; then
+      echo "$dir/$img"
+      return
+    fi
+  done
+  if [[ -d "$dir/assets" ]]; then
+    for img in preview.png screenshot.png preview.jpg screenshot.jpg; do
+      if [[ -f "$dir/assets/$img" ]]; then
+        echo "$dir/assets/$img"
+        return
+      fi
+    done
+  fi
+  return 1
+}
+
+name="$1"
+dir=$(get_bar_dir "$name")
+desc=$(get_bar_desc "$name")
+
+echo "Name: $name"
+echo "Description: $desc"
+echo "Path: $dir"
+echo ""
+
+img=$(find_preview_image "$dir" 2>/dev/null)
+if [[ -n "$img" ]] && command -v kitten &>/dev/null; then
+  kitten icat --clear --transfer-mode=stream --unicode-placeholder "$img" 2>/dev/null
+elif [[ -n "$img" ]] && command -v chafa &>/dev/null; then
+  chafa --size=60x20 "$img" 2>/dev/null
+else
+  echo "(No preview available)"
+fi
