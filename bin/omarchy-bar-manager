@@ -173,16 +173,19 @@ switch_bar() {
   link_bar "$target"
   case "$target" in
     omarchy)
+      omarchy-toggle bar-off off 2>/dev/null
       mv "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" \
          "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise.disabled" 2>/dev/null
       omarchy restart shell ;;
     qs)
+      omarchy-toggle bar-off off 2>/dev/null
       pkill -9 qs 2>/dev/null; sleep 0.5
       mv "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise.disabled" \
          "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" 2>/dev/null
       export OMARCHY_PATH=/usr/share/omarchy
       setsid qs -n -d -c bar >/dev/null 2>&1 & ;;
     *)
+      omarchy-toggle bar-off on 2>/dev/null
       setsid quickshell -n -p "$ACTIVE_DIR" >/dev/null 2>&1 &
       echo $! > "$CUSTOM_BAR_PID_FILE"
       ;;
