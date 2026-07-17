@@ -150,6 +150,17 @@ remove_bar() {
   echo -e "${GREEN}Removed '$name'${RESET}"
 }
 
+CUSTOM_BAR_PID_FILE="$HOME/.cache/obm-bar-pid"
+
+kill_custom_bar() {
+  if [[ -f "$CUSTOM_BAR_PID_FILE" ]]; then
+    local pid=$(cat "$CUSTOM_BAR_PID_FILE")
+    kill "$pid" 2>/dev/null
+    sleep 0.2
+    rm -f "$CUSTOM_BAR_PID_FILE"
+  fi
+}
+
 switch_bar() {
   local target="$1"
   local current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
@@ -158,7 +169,7 @@ switch_bar() {
     *) [[ ! -d "$BARS_DIR/$target" ]] && echo -e "${RED}Unknown bar: $target${RESET}" && exit 1 ;;
   esac
   [[ "$target" == "$current" ]] && echo -e "${YELLOW}Already using $target${RESET}" && exit 0
-  pkill -9 quickshell 2>/dev/null; pkill -9 qs 2>/dev/null; sleep 0.5
+  kill_custom_bar
   link_bar "$target"
   case "$target" in
     omarchy)
@@ -166,23 +177,31 @@ switch_bar() {
          "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise.disabled" 2>/dev/null
       omarchy restart shell ;;
     qs)
+      pkill -9 qs 2>/dev/null; sleep 0.5
       mv "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise.disabled" \
          "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" 2>/dev/null
       export OMARCHY_PATH=/usr/share/omarchy
       setsid qs -n -d -c bar >/dev/null 2>&1 & ;;
     *)
-      setsid quickshell -n -p "$ACTIVE_DIR" >/dev/null 2>&1 & ;;
+      setsid quickshell -n -p "$ACTIVE_DIR" >/dev/null 2>&1 &
+      echo $! > "$CUSTOM_BAR_PID_FILE"
+      ;;
   esac
   echo -e "${GREEN}Switched to $(get_bar_desc "$target")${RESET}"
 }
 
 refresh_bar() {
   local current=$(cat "$STATE_FILE" 2>/dev/null || echo "omarchy")
-  pkill -9 quickshell 2>/dev/null; pkill -9 qs 2>/dev/null; sleep 0.5
   case "$current" in
     omarchy) omarchy restart shell ;;
-    qs) export OMARCHY_PATH=/usr/share/omarchy; setsid qs -n -d -c bar >/dev/null 2>&1 & ;;
-    *) setsid quickshell -n -p "$ACTIVE_DIR" >/dev/null 2>&1 & ;;
+    qs) pkill -9 qs 2>/dev/null; sleep 0.5
+        export OMARCHY_PATH=/usr/share/omarchy
+        setsid qs -n -d -c bar >/dev/null 2>&1 & ;;
+    *)
+      kill_custom_bar
+      setsid quickshell -n -p "$ACTIVE_DIR" >/dev/null 2>&1 &
+      echo $! > "$CUSTOM_BAR_PID_FILE"
+      ;;
   esac
   echo -e "${GREEN}Refreshed $current${RESET}"
 }
