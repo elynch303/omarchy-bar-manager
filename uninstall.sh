@@ -7,7 +7,7 @@ echo "Uninstalling obm..."
 
 for name in obm obm-preview omarchy-bar-manager omarchy-bar-manager-preview; do
   target="$LOCAL_BIN/$name"
-  if [[ -L "$target" ]] && readlink "$target" | grep -q "omarchy-bar-manager"; then
+  if [[ -f "$target" ]]; then
     rm -f "$target"
     echo "  removed $target"
   fi

@@ -5,8 +5,7 @@ Switch between Quickshell bars with a TUI or CLI.
 ## Install
 
 ```bash
-git clone https://github.com/elynch303/omarchy-bar-manager.git /local/repos/omarchy-bar-manager
-/local/repos/omarchy-bar-manager/install.sh
+curl -fsSL https://raw.githubusercontent.com/elynch303/omarchy-bar-manager/main/install.sh | bash
 ```
 
 ## Usage
@@ -58,5 +57,5 @@ Pulls latest from the repo and re-runs the installer.
 ## Uninstall
 
 ```bash
-/local/repos/omarchy-bar-manager/uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/elynch303/omarchy-bar-manager/main/uninstall.sh | bash
 ```

@@ -1,21 +1,27 @@
 #!/bin/bash
 set -e
 
-BIN_DIR="$(dirname "$0")/bin"
+REPO="https://github.com/elynch303/omarchy-bar-manager.git"
 LOCAL_BIN="$HOME/.local/bin"
-
-mkdir -p "$LOCAL_BIN" "$HOME/.local/share/bars" "$HOME/.config/omarchy/active-bar"
+TEMP_DIR="/tmp/obm-install-$$"
 
 echo "Installing obm..."
 
-for script in "$BIN_DIR"/*; do
-  name=$(basename "$script")
+mkdir -p "$LOCAL_BIN" "$HOME/.local/share/bars" "$HOME/.config/omarchy/active-bar"
+
+git clone --depth 1 "$REPO" "$TEMP_DIR" 2>/dev/null
+
+for name in obm obm-preview omarchy-bar-manager omarchy-bar-manager-preview; do
+  src="$TEMP_DIR/bin/$name"
   target="$LOCAL_BIN/$name"
-  rm -f "$target"
-  ln -sf "$(realpath "$script")" "$target"
-  chmod +x "$script"
-  echo "  $name → $target"
+  if [[ -e "$src" ]]; then
+    cp "$src" "$target"
+    chmod +x "$target"
+    echo "  $target"
+  fi
 done
+
+rm -rf "$TEMP_DIR"
 
 echo ""
 echo "Done. Run 'obm' to launch."
